@@ -7,11 +7,12 @@
 #include <sys/types.h>
 #include <sys/ipc.h>
 #include <sys/sem.h>
+#include "header.h"
 
 typedef struct _Node {
-    char name;
+    int vertex;
     uint8_t numConnectsTo;
-    char connectsTo[16];
+    int connectsTo[16];
     time_t timeStamp;
 } Node;
 
@@ -88,9 +89,8 @@ int parseFile(char *file)
             if (!token || !token_val)
                 continue;
 
-            if (!strcmp(token, "NodeName")) {
-                //strcpy(thisNode.name, token_val);
-                thisNode.name = *token_val;
+            if (!strcmp(token, "Node")) {
+                thisNode.vertex = atoi(token_val);
             }
             else if (!strcmp(token, "ConnectsTo")) {
                 tokens = str_split(token_val, ',');
@@ -99,8 +99,7 @@ int parseFile(char *file)
                     int i;
                     for (i = 0; *(tokens + i); i++)
                     {
-                        //strcpy(thisNode.connectsTo[i], *(tokens + i));
-                        thisNode.connectsTo[i] = **(tokens + i);
+                        thisNode.connectsTo[i] = atoi(*(tokens + i));
                         thisNode.numConnectsTo++;
                         free(*(tokens + i));
                     }
@@ -116,10 +115,10 @@ int parseFile(char *file)
 void printNode(Node *node)
 {
     int i;
-    printf("NodeName: %c \n", node->name);
+    printf("Node: %d \n", node->vertex);
     printf("ConnectsTo: ");
     for (i = 0; i < node->numConnectsTo; i++)
-        printf ("%c ", node->connectsTo[i]);
+        printf ("%d ", node->connectsTo[i]);
     printf("\n");
 }
 
@@ -129,7 +128,7 @@ int insertNode(Node *node)
     node->timeStamp = time(NULL);
     int i;
     for (i = 0; i < gNodeList.numNodes; i++) {
-        if (gNodeList.node[i].name == node->name) {
+        if (gNodeList.node[i].vertex == node->vertex) {
             memcpy(&gNodeList.node[i], node, sizeof(Node));
             break;
         }
@@ -145,7 +144,7 @@ void validateList()
 {
     int i, j;
     for (i = 0; i < gNodeList.numNodes; i++) {
-        if (time(NULL) > (gNodeList.node[i].timeStamp + 5)) {
+        if (time(NULL) > (gNodeList.node[i].timeStamp + 3)) {
             // Node has expired. That mean process which created it is dead.
             for (j = i; j < gNodeList.numNodes - 1; j++) {
                 gNodeList.node[j] = gNodeList.node[j + 1];
@@ -154,6 +153,19 @@ void validateList()
             i--;
         }
     }
+}
+
+struct Graph* createGraphFromNodes(void)
+{
+    int i, j;
+    struct Graph *graph = createGraph(gNodeList.numNodes);
+
+    for (i = 0; i < gNodeList.numNodes; i++) {
+        for (j = 0; j < gNodeList.node[i].numConnectsTo; j++) {
+            addEdge(graph, gNodeList.node[i].vertex, gNodeList.node[i].connectsTo[j]);
+        }
+    }
+    return graph;
 }
 
 void* listenerThread (void *args)
@@ -173,10 +185,10 @@ void* listenerThread (void *args)
                 printf("Calling b\n");
                 // TODO
                 break;
-            case 's':
+            case 'c':
                 validateList();
-                for (i = 0; i < gNodeList.numNodes; i++)
-                    printNode(&gNodeList.node[i]);
+                struct Graph *graph = createGraphFromNodes();
+                printGraph(graph);
                 break;
             default:
                 printf("Invalid Choice: %c\n", choice);

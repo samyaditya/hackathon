@@ -1,10 +1,10 @@
 EXE = main
-SRCS = main.c
+SRCS = graph.c main.c
 
 LIBS = -pthread
 
 $(EXE): clean
-	cc $(LIBS) $(SRCS) -o $(EXE)
+	cc $(LIBS) -g $(SRCS) -o $(EXE)
 
 clean:
 	rm -f $(EXE)
