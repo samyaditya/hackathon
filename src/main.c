@@ -3,16 +3,27 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <pthread.h>
+#include <semaphore.h>
+#include <sys/types.h>
+#include <sys/ipc.h>
+#include <sys/sem.h>
 
 typedef struct _Node {
-    char name[32];
+    char name;
     uint8_t numConnectsTo;
-    char connectsTo[8][32];
+    char connectsTo[32];
     time_t timeStamp;
 } Node;
 
+typedef struct _NodeList {
+    uint8_t numNodes;
+    Node node[24];
+} NodeList;
+
 Node thisNode;
+NodeList gNodeList;
 pthread_t thId;
+sem_t semvar;
 
 char** str_split(char* a_str, const char a_delim)
 {
@@ -63,7 +74,7 @@ int parseFile(char *file)
     char *status = NULL;
     char *token = NULL, **tokens;
     char *token_val = NULL;
-    
+
     if ((readPtr = fopen(file, "r")) == NULL) {
         printf("File %s not found\n", file);
         return -1;
@@ -78,7 +89,8 @@ int parseFile(char *file)
                 continue;
 
             if (!strcmp(token, "NodeName")) {
-                strcpy(thisNode.name, token_val);
+                //strcpy(thisNode.name, token_val);
+                thisNode.name = *token_val;
             }
             else if (!strcmp(token, "ConnectsTo")) {
                 tokens = str_split(token_val, ',');
@@ -87,7 +99,8 @@ int parseFile(char *file)
                     int i;
                     for (i = 0; *(tokens + i); i++)
                     {
-                        strcpy(thisNode.connectsTo[i], *(tokens + i));
+                        //strcpy(thisNode.connectsTo[i], *(tokens + i));
+                        thisNode.connectsTo[i] = **(tokens + i);
                         thisNode.numConnectsTo++;
                         free(*(tokens + i));
                     }
@@ -103,24 +116,37 @@ int parseFile(char *file)
 void printNode(Node *node)
 {
     int i;
-    printf("NodeName: %s \n", node->name);
+    printf("NodeName: %c \n", node->name);
     printf("ConnectsTo: ");
     for (i = 0; i < node->numConnectsTo; i++)
-        printf ("%s ", node->connectsTo[i]);
+        printf ("%c ", node->connectsTo[i]);
     printf("\n");
 }
 
 int insertNode(Node *node)
 {
-    // TODO: Fetch the graph and insert new Node. Also update timeStamp.
+    // Update timeStamp and Insert Node into gNodeList.
+    node->timeStamp = time(NULL);
+    int i;
+    for (i = 0; i < gNodeList.numNodes; i++) {
+        if (gNodeList.node[i].name == node->name) {
+            memcpy(&gNodeList.node[i], node, sizeof(Node));
+            break;
+        }
+    }
+    if (i == gNodeList.numNodes) {
+        memcpy(&gNodeList.node[i], node, sizeof(Node));
+        gNodeList.numNodes++;
+    }
     return 0;
 }
 
 void* listenerThread (void *args)
 {
     char choice = 0;
+    int i = 0;
     while (1) {
-        printf("(a) Find Shortest Path \t (b) Find Mimimum Spanning Tree \nEnter a choice: ");
+        printf("(a) Find Shortest Path \t (b) Find Mimimum Spanning Tree \t (c) Show graph\nEnter a choice: ");
         scanf(" %c", &choice);
 
         switch(choice) {
@@ -132,6 +158,10 @@ void* listenerThread (void *args)
                 printf("Calling b\n");
                 // TODO
                 break;
+            case 's':
+                for (i = 0; i < gNodeList.numNodes; i++)
+                    printNode(&gNodeList.node[i]);
+                break;
             default:
                 printf("Invalid Choice: %c\n", choice);
         }
@@ -140,6 +170,7 @@ void* listenerThread (void *args)
 
 int main(int argc, char **argv)
 {
+    FILE *fp = NULL;
     if (argc != 2) {
         printf("Usage: %s <input-file>\n", argv[0]);
         return -1;
@@ -149,11 +180,40 @@ int main(int argc, char **argv)
     if (parseFile(argv[1])) {
         return -1;
     }
-    printNode(&thisNode);
-
-    insertNode(&thisNode);
 
     pthread_create(&thId, NULL, listenerThread, NULL);
+
+    key_t key = 1234;
+    int nsems = 1;
+    struct sembuf sb = {0,-1,0};
+    int semid=semget(key,nsems,IPC_CREAT|0666);
+    if (semid<0)
+    {
+        perror("Semaphore creation failed ");
+    }
+
+    while(1) {
+        memset(&gNodeList, 0, sizeof(gNodeList));
+        // fetch gNodeList (lock bin file and binary read)
+        // sb.sem_op=-1; //Lock
+        // semop(semid,(struct sembuf *)&sb,1);
+        fp = fopen("bin", "r");
+        if (fp == NULL)
+            perror("Fail to open bin file");
+        else {
+            fread(&gNodeList, sizeof(gNodeList), 1, fp);
+            fclose(fp);
+        }
+        insertNode(&thisNode);  // into gNodeList
+        fp = fopen("bin", "w");
+        // Pushback updated gNodeList (binary write and unlock bin file)
+        fwrite(&gNodeList, sizeof(gNodeList), 1, fp);
+        fclose(fp);
+        // sb.sem_op=1;//Unlock
+        // semop(semid,(struct sembuf *)&sb,1);
+        sleep(5);
+    }
+
     pthread_join(thId, NULL);
 
     printf("OK\n");
