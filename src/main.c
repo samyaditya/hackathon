@@ -11,13 +11,13 @@
 typedef struct _Node {
     char name;
     uint8_t numConnectsTo;
-    char connectsTo[32];
+    char connectsTo[16];
     time_t timeStamp;
 } Node;
 
 typedef struct _NodeList {
     uint8_t numNodes;
-    Node node[24];
+    Node node[16];
 } NodeList;
 
 Node thisNode;
@@ -183,21 +183,25 @@ int main(int argc, char **argv)
 
     pthread_create(&thId, NULL, listenerThread, NULL);
 
-    key_t key = 1234;
-    int nsems = 1;
     struct sembuf sb = {0,-1,0};
-    int semid=semget(key,nsems,IPC_CREAT|0666);
-    if (semid<0)
-    {
-        perror("Semaphore creation failed ");
+    key_t key=ftok(".",'a');
+    if(key == -1 ) {
+        printf("\n\n Initialization Falied of shared memory \n\n");
+        return 1;
     }
+    int semid=shmget(key, 1024,IPC_CREAT|0744);
+    if(semid == -1 ) {
+        printf("\n\n Error captured while share memory allocation\n\n");
+        return 1;
+    }
+    //uint8_t *data=(uint8_t *)shmat(semid,(void *)0,0);
 
     while(1) {
         memset(&gNodeList, 0, sizeof(gNodeList));
         // fetch gNodeList (lock bin file and binary read)
-        // sb.sem_op=-1; //Lock
-        // semop(semid,(struct sembuf *)&sb,1);
-        fp = fopen("bin", "r");
+        sb.sem_op = -1; //Lock
+        semop(semid,(struct sembuf *)&sb,1);
+        fp = fopen("/tmp/sembin", "r");
         if (fp == NULL)
             perror("Fail to open bin file");
         else {
@@ -205,12 +209,12 @@ int main(int argc, char **argv)
             fclose(fp);
         }
         insertNode(&thisNode);  // into gNodeList
-        fp = fopen("bin", "w");
+        fp = fopen("/tmp/sembin", "w");
         // Pushback updated gNodeList (binary write and unlock bin file)
         fwrite(&gNodeList, sizeof(gNodeList), 1, fp);
         fclose(fp);
-        // sb.sem_op=1;//Unlock
-        // semop(semid,(struct sembuf *)&sb,1);
+        sb.sem_op = 1;//Unlock
+        semop(semid,(struct sembuf *)&sb,1);
         sleep(5);
     }
 
