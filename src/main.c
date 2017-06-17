@@ -141,6 +141,21 @@ int insertNode(Node *node)
     return 0;
 }
 
+void validateList()
+{
+    int i, j;
+    for (i = 0; i < gNodeList.numNodes; i++) {
+        if (time(NULL) > (gNodeList.node[i].timeStamp + 5)) {
+            // Node has expired. That mean process which created it is dead.
+            for (j = i; j < gNodeList.numNodes - 1; j++) {
+                gNodeList.node[j] = gNodeList.node[j + 1];
+            }
+            gNodeList.numNodes--;
+            i--;
+        }
+    }
+}
+
 void* listenerThread (void *args)
 {
     char choice = 0;
@@ -159,6 +174,7 @@ void* listenerThread (void *args)
                 // TODO
                 break;
             case 's':
+                validateList();
                 for (i = 0; i < gNodeList.numNodes; i++)
                     printNode(&gNodeList.node[i]);
                 break;
@@ -215,7 +231,7 @@ int main(int argc, char **argv)
         fclose(fp);
         sb.sem_op = 1;//Unlock
         semop(semid,(struct sembuf *)&sb,1);
-        sleep(5);
+        sleep(2);
     }
 
     pthread_join(thId, NULL);
