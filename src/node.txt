@@ -1,0 +1,2 @@
+NodeName=A
+ConnectsTo=B,F
