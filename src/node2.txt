@@ -1,0 +1,2 @@
+Node=2
+ConnectsTo=1,3

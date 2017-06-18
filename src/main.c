@@ -25,6 +25,7 @@ Node thisNode;
 NodeList gNodeList;
 pthread_t thId;
 sem_t semvar;
+pthread_mutex_t nodeListLock;
 
 char** str_split(char* a_str, const char a_delim)
 {
@@ -144,7 +145,7 @@ void validateList()
 {
     int i, j;
     for (i = 0; i < gNodeList.numNodes; i++) {
-        if (time(NULL) > (gNodeList.node[i].timeStamp + 3)) {
+        if (time(NULL) > (gNodeList.node[i].timeStamp + 5)) {
             // Node has expired. That mean process which created it is dead.
             for (j = i; j < gNodeList.numNodes - 1; j++) {
                 gNodeList.node[j] = gNodeList.node[j + 1];
@@ -153,6 +154,22 @@ void validateList()
             i--;
         }
     }
+}
+
+void printList()
+{
+    int i, j;
+    printf("\n =============== Graph ===============\n");
+    for (i = 0; i < gNodeList.numNodes; i++) {
+        printf(" Node %d is connecting to ",gNodeList.node[i].vertex);
+        for (j = 0; j < gNodeList.node[i].numConnectsTo; j++) {
+             printf(" %d", gNodeList.node[i].connectsTo[j]);
+             if((j+1) < gNodeList.node[i].numConnectsTo)
+                 printf(", ");
+        }
+        printf("\n");
+    }
+    printf("\n ================ END ================\n");
 }
 
 struct Graph* createGraphFromNodes(void)
@@ -186,9 +203,12 @@ void* listenerThread (void *args)
                 // TODO
                 break;
             case 'c':
+                pthread_mutex_lock(&nodeListLock);
                 validateList();
                 struct Graph *graph = createGraphFromNodes();
-                printGraph(graph);
+                //printGraph(graph);
+                printList();
+                pthread_mutex_unlock(&nodeListLock);
                 break;
             default:
                 printf("Invalid Choice: %c\n", choice);
@@ -229,6 +249,7 @@ int main(int argc, char **argv)
         // fetch gNodeList (lock bin file and binary read)
         sb.sem_op = -1; //Lock
         semop(semid,(struct sembuf *)&sb,1);
+        pthread_mutex_lock(&nodeListLock);
         fp = fopen("/tmp/sembin", "r");
         if (fp == NULL)
             perror("Fail to open bin file");
@@ -241,6 +262,7 @@ int main(int argc, char **argv)
         // Pushback updated gNodeList (binary write and unlock bin file)
         fwrite(&gNodeList, sizeof(gNodeList), 1, fp);
         fclose(fp);
+        pthread_mutex_unlock(&nodeListLock);
         sb.sem_op = 1;//Unlock
         semop(semid,(struct sembuf *)&sb,1);
         sleep(2);
